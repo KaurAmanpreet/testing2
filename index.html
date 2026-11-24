@@ -269,7 +269,10 @@
   $('currency').addEventListener('change', (e) => { state.currency = e.target.value; save(); render(); });
 
   $('exportBtn').addEventListener('click', () => {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const json = JSON.stringify(state, null, 2);
+    // Inside the Android app, downloads don't work in a WebView; hand off to the native save dialog.
+    if (window.LedgerAndroid) { window.LedgerAndroid.saveFile(`ledger-backup-${today()}.json`, json); return; }
+    const blob = new Blob([json], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `ledger-backup-${today()}.json`;

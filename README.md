@@ -15,3 +15,10 @@ Open `index.html` in any browser. There's nothing to install and no server. Your
 - **Currency picker**: USD, INR, EUR, GBP, CAD, AUD, JPY.
 - **Backups**: export or import your data as JSON.
 - Works on phones and supports dark mode.
+
+## Android app
+The `android/` folder holds an Android app (Android 8.0 or later) that runs the same `index.html` inside a WebView. Data is saved on the phone, and **Export backup** and **Import backup** use Android's file picker.
+
+**Get the APK.** Each push builds the app with GitHub Actions. Open the repo's **Actions** tab, choose the latest **Build Android APK** run, and download the **Ledger-apk** artifact. Unzip it, copy `app-debug.apk` to your phone, and open it (allow "Install unknown apps" when asked).
+
+**Build it yourself.** Open the `android/` folder in Android Studio and press Run, or run `cd android && ./gradlew assembleDebug`.
