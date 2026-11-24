@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ledger — Who Owes Whom</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --text: #1d2330; --muted: #6b7280; --border: #e5e7eb;
+    --green: #15803d; --green-bg: #dcfce7; --red: #b91c1c; --red-bg: #fee2e2; --accent: #2563eb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --card: #181b22; --text: #e8eaef; --muted: #9aa1ad; --border: #2a2f3a;
+      --green: #4ade80; --green-bg: #12301d; --red: #f87171; --red-bg: #3a1616; --accent: #60a5fa;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--text); }
+  header { padding: 20px 16px 8px; max-width: 900px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 1.5rem; }
+  main { max-width: 900px; margin: 0 auto; padding: 8px 16px 40px; }
+  .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+  .tile { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+  .tile .label { font-size: .8rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .tile .value { font-size: 1.5rem; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .pos { color: var(--green); } .neg { color: var(--red); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .card h2 { margin: 0 0 12px; font-size: 1.05rem; }
+  form.add { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr; gap: 10px; }
+  form.add .full { grid-column: 1 / -1; }
+  .type-toggle { display: flex; gap: 8px; }
+  .type-toggle label { flex: 1; border: 1px solid var(--border); border-radius: 8px; padding: 10px; cursor: pointer; text-align: center; font-weight: 600; }
+  .type-toggle input { display: none; }
+  .type-toggle input[value=gave]:checked + span { color: var(--green); }
+  .type-toggle input[value=got]:checked + span { color: var(--red); }
+  .type-toggle label:has(input[value=gave]:checked) { background: var(--green-bg); border-color: var(--green); }
+  .type-toggle label:has(input[value=got]:checked) { background: var(--red-bg); border-color: var(--red); }
+  input, select, button, textarea { font: inherit; color: inherit; }
+  input, select { width: 100%; padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+  button { padding: 9px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); cursor: pointer; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+  button.small { padding: 4px 10px; font-size: .85rem; }
+  button.danger { color: var(--red); }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  .toolbar input, .toolbar select { width: auto; flex: 1; min-width: 140px; }
+  .people { list-style: none; padding: 0; margin: 0; }
+  .person { border-top: 1px solid var(--border); }
+  .person:first-child { border-top: none; }
+  .person-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 4px; cursor: pointer; gap: 12px; }
+  .person-row:hover { background: var(--bg); }
+  .avatar { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; background: var(--bg); border: 1px solid var(--border); flex-shrink: 0; }
+  .person-name { font-weight: 600; }
+  .person-sub { font-size: .8rem; color: var(--muted); }
+  .amount { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  .amount small { display: block; font-weight: 400; font-size: .75rem; }
+  .details { padding: 0 4px 14px 52px; }
+  .tx { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: .9rem; align-items: center; }
+  .tx:last-child { border-bottom: none; }
+  .tx .meta { color: var(--muted); font-size: .8rem; }
+  .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .empty { color: var(--muted); text-align: center; padding: 24px; }
+  .settled { opacity: .6; }
+  footer { display: flex; gap: 8px; flex-wrap: wrap; }
+  @media (max-width: 640px) {
+    .summary { grid-template-columns: 1fr; }
+    form.add { grid-template-columns: 1fr 1fr; }
+    .details { padding-left: 4px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>💸 Ledger</h1>
+  <label style="display:flex;gap:8px;align-items:center;font-size:.9rem;color:var(--muted)">
+    Currency
+    <select id="currency" style="width:auto">
+      <option>USD</option><option>INR</option><option>EUR</option><option>GBP</option>
+      <option>CAD</option><option>AUD</option><option>JPY</option>
+    </select>
+  </label>
+</header>
+
+<main>
+  <section class="summary">
+    <div class="tile"><div class="label">People owe me</div><div class="value pos" id="sumOwedToMe">0</div></div>
+    <div class="tile"><div class="label">I owe people</div><div class="value neg" id="sumIOwe">0</div></div>
+    <div class="tile"><div class="label">Net balance</div><div class="value" id="sumNet">0</div></div>
+  </section>
+
+  <section class="card">
+    <h2>Add entry</h2>
+    <form class="add" id="addForm" autocomplete="off">
+      <div class="full type-toggle">
+        <label><input type="radio" name="type" value="gave" checked><span>I gave / lent money ↑</span></label>
+        <label><input type="radio" name="type" value="got"><span>I got / borrowed money ↓</span></label>
+      </div>
+      <input id="person" list="peopleList" placeholder="Person's name" required>
+      <datalist id="peopleList"></datalist>
+      <input id="amount" type="number" step="0.01" min="0.01" placeholder="Amount" required>
+      <input id="date" type="date" required>
+      <button class="primary" type="submit">Add</button>
+      <input id="note" class="full" placeholder="Note (optional) — e.g. dinner, rent, repayment">
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>People</h2>
+    <div class="toolbar">
+      <input id="search" placeholder="Search by name…">
+      <select id="filter">
+        <option value="all">All</option>
+        <option value="owesMe">Owe me</option>
+        <option value="iOwe">I owe</option>
+        <option value="settled">Settled</option>
+      </select>
+    </div>
+    <ul class="people" id="people"></ul>
+  </section>
+
+  <footer>
+    <button id="exportBtn">Export backup</button>
+    <button id="importBtn">Import backup</button>
+    <input type="file" id="importFile" accept="application/json" hidden>
+  </footer>
+</main>
+
+<script>
+(() => {
+  const KEY = 'ledger.v1';
+  const $ = (id) => document.getElementById(id);
+  let state = load();
+  const open = new Set();
+
+  function load() {
+    try {
+      const s = JSON.parse(localStorage.getItem(KEY));
+      if (s && Array.isArray(s.tx)) return { currency: s.currency || 'USD', tx: s.tx };
+    } catch {}
+    return { currency: 'USD', tx: [] };
+  }
+  function save() { localStorage.setItem(KEY, JSON.stringify(state)); }
+
+  const fmt = (n) => new Intl.NumberFormat(undefined, { style: 'currency', currency: state.currency }).format(n);
+  const today = () => { const d = new Date(); return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const key = (name) => name.trim().toLowerCase();
+  const round = (n) => Math.round(n * 100) / 100;
+
+  // Positive balance = they owe me; negative = I owe them.
+  function people() {
+    const map = new Map();
+    for (const t of state.tx) {
+      const k = key(t.person);
+      if (!map.has(k)) map.set(k, { name: t.person.trim(), balance: 0, tx: [], last: '' });
+      const p = map.get(k);
+      p.balance = round(p.balance + (t.type === 'gave' ? t.amount : -t.amount));
+      p.tx.push(t);
+      if (t.date > p.last) p.last = t.date;
+    }
+    for (const p of map.values()) p.tx.sort((a, b) => b.date.localeCompare(a.date) || b.created - a.created);
+    return [...map.values()];
+  }
+
+  function addTx(person, type, amount, date, note) {
+    state.tx.push({ id: uid(), person: person.trim(), type, amount: round(amount), date, note: note.trim(), created: Date.now() });
+    save(); render();
+  }
+
+  function render() {
+    $('currency').value = state.currency;
+    const all = people();
+    const owedToMe = all.filter((p) => p.balance > 0).reduce((s, p) => s + p.balance, 0);
+    const iOwe = all.filter((p) => p.balance < 0).reduce((s, p) => s - p.balance, 0);
+    const net = owedToMe - iOwe;
+    $('sumOwedToMe').textContent = fmt(owedToMe);
+    $('sumIOwe').textContent = fmt(iOwe);
+    $('sumNet').textContent = fmt(net);
+    $('sumNet').className = 'value ' + (net > 0 ? 'pos' : net < 0 ? 'neg' : '');
+
+    $('peopleList').innerHTML = all.map((p) => `<option value="${esc(p.name)}">`).join('');
+
+    const q = $('search').value.trim().toLowerCase();
+    const f = $('filter').value;
+    const list = all
+      .filter((p) => p.name.toLowerCase().includes(q))
+      .filter((p) => f === 'all' || (f === 'owesMe' && p.balance > 0) || (f === 'iOwe' && p.balance < 0) || (f === 'settled' && p.balance === 0))
+      .sort((a, b) => (b.balance !== 0) - (a.balance !== 0) || Math.abs(b.balance) - Math.abs(a.balance) || a.name.localeCompare(b.name));
+
+    if (!list.length) {
+      $('people').innerHTML = `<li class="empty">${state.tx.length ? 'No matches.' : 'No entries yet. Add one above to get started.'}</li>`;
+      return;
+    }
+
+    $('people').innerHTML = list.map((p) => {
+      const k = key(p.name);
+      const cls = p.balance > 0 ? 'pos' : p.balance < 0 ? 'neg' : '';
+      const label = p.balance > 0 ? 'owes you' : p.balance < 0 ? 'you owe' : 'settled up';
+      const details = open.has(k) ? `
+        <div class="details">
+          ${p.tx.map((t) => `
+            <div class="tx">
+              <div>
+                <span class="${t.type === 'gave' ? 'pos' : 'neg'}">${t.type === 'gave' ? 'You gave' : 'You got'} ${fmt(t.amount)}</span>
+                <div class="meta">${esc(t.date)}${t.note ? ' · ' + esc(t.note) : ''}</div>
+              </div>
+              <button class="small danger" data-del="${t.id}" title="Delete entry">✕</button>
+            </div>`).join('')}
+          <div class="actions">
+            ${p.balance !== 0 ? `<button class="small primary" data-settle="${esc(k)}">Settle up (${fmt(Math.abs(p.balance))})</button>` : ''}
+            <button class="small" data-prefill="${esc(p.name)}">Add entry</button>
+            <button class="small danger" data-delperson="${esc(k)}">Delete person</button>
+          </div>
+        </div>` : '';
+      return `
+        <li class="person ${p.balance === 0 ? 'settled' : ''}">
+          <div class="person-row" data-toggle="${esc(k)}">
+            <div style="display:flex;gap:12px;align-items:center;min-width:0">
+              <div class="avatar">${esc(p.name[0].toUpperCase())}</div>
+              <div style="min-width:0">
+                <div class="person-name">${esc(p.name)}</div>
+                <div class="person-sub">${p.tx.length} entr${p.tx.length === 1 ? 'y' : 'ies'} · last ${esc(p.last)}</div>
+              </div>
+            </div>
+            <div class="amount ${cls}">${p.balance === 0 ? '—' : fmt(Math.abs(p.balance))}<small>${label}</small></div>
+          </div>
+          ${details}
+        </li>`;
+    }).join('');
+  }
+
+  $('addForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const amount = parseFloat($('amount').value);
+    const name = $('person').value;
+    if (!name.trim() || !(amount > 0)) return;
+    // Reuse existing capitalization if this person already exists
+    const existing = people().find((p) => key(p.name) === key(name));
+    addTx(existing ? existing.name : name, document.querySelector('input[name=type]:checked').value, amount, $('date').value, $('note').value);
+    $('amount').value = ''; $('note').value = '';
+    $('amount').focus();
+  });
+
+  $('people').addEventListener('click', (e) => {
+    const el = e.target.closest('[data-toggle],[data-del],[data-settle],[data-prefill],[data-delperson]');
+    if (!el) return;
+    const d = el.dataset;
+    if (d.toggle !== undefined) { open.has(d.toggle) ? open.delete(d.toggle) : open.add(d.toggle); render(); }
+    else if (d.del) {
+      if (confirm('Delete this entry?')) { state.tx = state.tx.filter((t) => t.id !== d.del); save(); render(); }
+    } else if (d.settle) {
+      const p = people().find((x) => key(x.name) === d.settle);
+      if (p && confirm(`Record ${fmt(Math.abs(p.balance))} settlement with ${p.name}?`)) {
+        addTx(p.name, p.balance > 0 ? 'got' : 'gave', Math.abs(p.balance), today(), 'Settled up');
+      }
+    } else if (d.prefill) {
+      $('person').value = d.prefill; $('date').value = today(); $('amount').focus();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else if (d.delperson) {
+      if (confirm('Delete this person and all their entries?')) {
+        state.tx = state.tx.filter((t) => key(t.person) !== d.delperson); open.delete(d.delperson); save(); render();
+      }
+    }
+  });
+
+  $('search').addEventListener('input', render);
+  $('filter').addEventListener('change', render);
+  $('currency').addEventListener('change', (e) => { state.currency = e.target.value; save(); render(); });
+
+  $('exportBtn').addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `ledger-backup-${today()}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+  $('importBtn').addEventListener('click', () => $('importFile').click());
+  $('importFile').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const data = JSON.parse(await file.text());
+      if (!Array.isArray(data.tx)) throw new Error('bad file');
+      if (!confirm(`Replace current data with ${data.tx.length} entries from backup?`)) return;
+      state = { currency: data.currency || 'USD', tx: data.tx };
+      save(); render();
+    } catch { alert('That file is not a valid Ledger backup.'); }
+    e.target.value = '';
+  });
+
+  $('date').value = today();
+  render();
+})();
+</script>
+</body>
+</html>
